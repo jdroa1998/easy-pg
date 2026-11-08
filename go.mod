@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/jdroa1998/easy-logger v0.1.1
+	github.com/jdroa1998/easy-logger v1.0.0
 )
 
 require (
