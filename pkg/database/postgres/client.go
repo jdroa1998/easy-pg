@@ -21,6 +21,11 @@ type Config struct {
 	Timeout  time.Duration
 	MaxConns int32
 	Logger   *logger.Logger
+
+	MinConns        int32
+	MaxConnIdleTime time.Duration
+	MaxConnLifetime time.Duration
+	QueryExecMode   string
 }
 
 type Client struct {
@@ -40,6 +45,11 @@ func NewClientFromEnv() *Client {
 		Timeout:  time.Duration(getEnvInt("DB_TIMEOUT", 30)) * time.Second,
 		MaxConns: int32(getEnvInt("DB_MAX_CONNS", 50)),
 		Logger:   logger.NewFromEnv(),
+
+		MinConns:        int32(getEnvInt("DB_MIN_CONNS", 0)),
+		MaxConnIdleTime: time.Duration(getEnvInt("DB_MAX_CONN_IDLE_TIME", 0)) * time.Second,
+		MaxConnLifetime: time.Duration(getEnvInt("DB_MAX_CONN_LIFETIME", 0)) * time.Second,
+		QueryExecMode:   getEnvString("DB_QUERY_EXEC_MODE", ""),
 	}
 
 	return NewClient(cfg)
@@ -85,6 +95,22 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	poolConfig.MaxConns = c.cfg.MaxConns
+	if c.cfg.MinConns > 0 {
+		poolConfig.MinConns = c.cfg.MinConns
+	}
+	if c.cfg.MaxConnIdleTime > 0 {
+		poolConfig.MaxConnIdleTime = c.cfg.MaxConnIdleTime
+	}
+	if c.cfg.MaxConnLifetime > 0 {
+		poolConfig.MaxConnLifetime = c.cfg.MaxConnLifetime
+	}
+	if c.cfg.QueryExecMode != "" {
+		mode, err := parseQueryExecMode(c.cfg.QueryExecMode)
+		if err != nil {
+			return err
+		}
+		poolConfig.ConnConfig.DefaultQueryExecMode = mode
+	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
@@ -104,6 +130,22 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.logger.DebugMsg("Successfully connected to PostgreSQL %s:%d/%s", c.cfg.Host, c.cfg.Port, c.cfg.DBName)
 
 	return nil
+}
+
+func parseQueryExecMode(v string) (pgx.QueryExecMode, error) {
+	switch v {
+	case "cache_statement":
+		return pgx.QueryExecModeCacheStatement, nil
+	case "cache_describe":
+		return pgx.QueryExecModeCacheDescribe, nil
+	case "describe_exec":
+		return pgx.QueryExecModeDescribeExec, nil
+	case "exec":
+		return pgx.QueryExecModeExec, nil
+	case "simple_protocol":
+		return pgx.QueryExecModeSimpleProtocol, nil
+	}
+	return 0, fmt.Errorf("unknown query exec mode %q", v)
 }
 
 func (c *Client) Close() {
